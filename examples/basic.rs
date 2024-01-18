@@ -5,7 +5,7 @@ use axum::{
     routing::get,
     Router,
 };
-use axum_messages::Messages;
+use axum_messages::{Messages, MessagesManagerLayer};
 use time::Duration;
 use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
 
@@ -19,6 +19,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(set_messages_handler))
         .route("/read-messages", get(read_messages_handler))
+        .layer(MessagesManagerLayer)
         .layer(session_layer);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
@@ -31,7 +32,7 @@ async fn main() {
 async fn read_messages_handler(messages: Messages) -> impl IntoResponse {
     let messages = messages
         .into_iter()
-        .map(|(level, message)| format!("{:?}: {}", level, message))
+        .map(|message| format!("{:?}: {}", message.level, message))
         .collect::<Vec<_>>()
         .join(", ");
 
@@ -45,10 +46,7 @@ async fn read_messages_handler(messages: Messages) -> impl IntoResponse {
 async fn set_messages_handler(messages: Messages) -> impl IntoResponse {
     messages
         .info("Hello, world!")
-        .debug("This is a debug message.")
-        .save()
-        .await
-        .unwrap();
+        .debug("This is a debug message.");
 
     Redirect::to("/read-messages")
 }

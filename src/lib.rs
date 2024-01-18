@@ -11,7 +11,7 @@
 //!     routing::get,
 //!     Router,
 //! };
-//! use axum_messages::Messages;
+//! use axum_messages::{Messages, MessagesManagerLayer};
 //! use time::Duration;
 //! use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
 //!
@@ -25,6 +25,7 @@
 //!     let app = Router::new()
 //!         .route("/", get(set_messages_handler))
 //!         .route("/read-messages", get(read_messages_handler))
+//!         .layer(MessagesManagerLayer)
 //!         .layer(session_layer);
 //!
 //!     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
@@ -37,7 +38,7 @@
 //! async fn read_messages_handler(messages: Messages) -> impl IntoResponse {
 //!     let messages = messages
 //!         .into_iter()
-//!         .map(|(level, message)| format!("{:?}: {}", level, message))
+//!         .map(|message| format!("{:?}: {}", message.level, message))
 //!         .collect::<Vec<_>>()
 //!         .join(", ");
 //!
@@ -51,10 +52,7 @@
 //! async fn set_messages_handler(messages: Messages) -> impl IntoResponse {
 //!     messages
 //!         .info("Hello, world!")
-//!         .debug("This is a debug message.")
-//!         .save()
-//!         .await
-//!         .unwrap();
+//!         .debug("This is a debug message.");
 //!
 //!     Redirect::to("/read-messages")
 //! }
@@ -68,12 +66,24 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
-use std::collections::VecDeque;
+use core::fmt;
+use std::{
+    collections::VecDeque,
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 use async_trait::async_trait;
-use axum_core::extract::FromRequestParts;
+use axum_core::{
+    extract::{FromRequestParts, Request},
+    response::Response,
+};
 use http::{request::Parts, StatusCode};
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use tower::{Layer, Service};
 use tower_sessions_core::{session, Session};
 
 // N.B.: Code structure directly borrowed from `axum-flash`: https://github.com/davidpdrsn/axum-flash/blob/5e8b2bded97fd10bb275d5bc66f4d020dec465b9/src/lib.rs
@@ -81,11 +91,19 @@ use tower_sessions_core::{session, Session};
 /// Container for a message which provides a level and message content.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
+    /// Message level, i.e. `Level`.
     #[serde(rename = "l")]
-    level: Level,
+    pub level: Level,
 
+    /// The message itself.
     #[serde(rename = "m")]
-    message: String,
+    pub message: String,
+}
+
+impl fmt::Display for Message {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
 }
 
 type MessageQueue = VecDeque<Message>;
@@ -126,70 +144,156 @@ struct Data {
 #[derive(Debug, Clone)]
 pub struct Messages {
     session: Session,
-    data: Data,
+    data: Arc<Mutex<Data>>,
 }
 
 impl Messages {
-    const DATA_KEY: &'static str = "messages.data";
+    const DATA_KEY: &'static str = "axum-messages.data";
+
+    fn new(session: Session, data: Data) -> Self {
+        Self {
+            session,
+            data: Arc::new(Mutex::new(data)),
+        }
+    }
 
     /// Push a `Debug` message.
-    #[must_use = "`save` must be called to persist messages in the session"]
     pub fn debug(self, message: impl Into<String>) -> Self {
         self.push(Level::Debug, message)
     }
 
     /// Push an `Info` message.
-    #[must_use = "`save` must be called to persist messages in the session"]
     pub fn info(self, message: impl Into<String>) -> Self {
         self.push(Level::Info, message)
     }
 
     /// Push a `Success` message.
-    #[must_use = "`save` must be called to persist messages in the session"]
     pub fn success(self, message: impl Into<String>) -> Self {
         self.push(Level::Success, message)
     }
 
     /// Push a `Warning` message.
-    #[must_use = "`save` must be called to persist messages in the session"]
     pub fn warning(self, message: impl Into<String>) -> Self {
         self.push(Level::Warning, message)
     }
 
     /// Push an `Error` message.
-    #[must_use = "`save` must be called to persist messages in the session"]
     pub fn error(self, message: impl Into<String>) -> Self {
         self.push(Level::Error, message)
     }
 
     /// Push a message with the given level.
-    #[must_use = "`save` must be called to persist messages in the session"]
-    pub fn push(mut self, level: Level, message: impl Into<String>) -> Self {
-        self.data.pending_messages.push_back(Message {
-            message: message.into(),
-            level,
-        });
+    pub fn push(self, level: Level, message: impl Into<String>) -> Self {
+        {
+            let mut data = self.data.lock();
+            data.pending_messages.push_back(Message {
+                message: message.into(),
+                level,
+            });
+        }
         self
     }
 
-    /// Save messages back to the session.
-    ///
-    /// Note that this must called or messages will not be persisted between
-    /// requests.
-    pub async fn save(self) -> Result<Self, session::Error> {
+    async fn save(self) -> Result<Self, session::Error> {
         self.session
             .insert(Self::DATA_KEY, self.data.clone())
             .await?;
         Ok(self)
     }
+
+    fn load(self) -> Self {
+        {
+            // Load messages by taking them from the pending queue.
+            let mut data = self.data.lock();
+            data.messages = std::mem::take(&mut data.pending_messages);
+        }
+        self
+    }
 }
 
 impl Iterator for Messages {
-    type Item = (Level, String);
+    type Item = Message;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let message = self.data.messages.pop_front()?;
-        Some((message.level, message.message))
+        let mut data = self.data.lock();
+        data.messages.pop_front()
+    }
+}
+
+/// MIddleware provider `Messages` as a request extension.
+#[derive(Debug, Clone)]
+pub struct MessagesManager<S> {
+    inner: S,
+}
+
+impl<ReqBody, ResBody, S> Service<Request<ReqBody>> for MessagesManager<S>
+where
+    S: Service<Request<ReqBody>, Response = Response<ResBody>> + Clone + Send + 'static,
+    S::Future: Send + 'static,
+    S::Error: Send,
+    ReqBody: Send + 'static,
+    ResBody: Default + Send,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    #[inline]
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, mut req: Request<ReqBody>) -> Self::Future {
+        // Because the inner service can panic until ready, we need to ensure we only
+        // use the ready service.
+        //
+        // See: https://docs.rs/tower/latest/tower/trait.Service.html#be-careful-when-cloning-inner-services
+        let clone = self.inner.clone();
+        let mut inner = std::mem::replace(&mut self.inner, clone);
+
+        Box::pin(async move {
+            let Some(session) = req.extensions().get::<Session>().cloned() else {
+                let mut res = Response::default();
+                *res.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
+                return Ok(res);
+            };
+
+            let data = match session.get::<Data>(Messages::DATA_KEY).await {
+                Ok(Some(data)) => data,
+                Ok(None) => Data::default(),
+                Err(_) => {
+                    let mut res = Response::default();
+                    *res.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
+                    return Ok(res);
+                }
+            };
+
+            let messages = Messages::new(session, data);
+
+            req.extensions_mut().insert(messages.clone());
+
+            let res = inner.call(req).await;
+
+            if messages.save().await.is_err() {
+                let mut res = Response::default();
+                *res.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
+                return Ok(res);
+            };
+
+            res
+        })
+    }
+}
+
+/// Layer for `MessagesManager`.
+#[derive(Debug, Clone)]
+pub struct MessagesManagerLayer;
+
+impl<S> Layer<S> for MessagesManagerLayer {
+    type Service = MessagesManager<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        MessagesManager { inner }
     }
 }
 
@@ -200,32 +304,16 @@ where
 {
     type Rejection = (StatusCode, &'static str);
 
-    async fn from_request_parts(req: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let session = Session::from_request_parts(req, state).await?;
-        let mut data = match session.get::<Data>(Self::DATA_KEY).await {
-            Ok(Some(data)) => data,
-            Ok(None) => Data::default(),
-            Err(_) => {
-                return Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Could not get from session",
-                ));
-            }
-        };
-
-        // Load messages by taking them from the pending queue.
-        data.messages = std::mem::take(&mut data.pending_messages);
-
-        // Save back to the session to ensure future loads do not repeat loaded
-        // messages.
-        if session.insert(Self::DATA_KEY, data.clone()).await.is_err() {
-            return Err((
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        parts
+            .extensions
+            .get::<Messages>()
+            .cloned()
+            .ok_or((
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "Could not insert to session",
-            ));
-        };
-
-        Ok(Self { session, data })
+                "Could not extract messages. Is `MessagesManagerLayer` installed?",
+            ))
+            .map(|messages| messages.load())
     }
 }
 
@@ -251,12 +339,13 @@ mod tests {
         let app = Router::new()
             .route("/", get(root))
             .route("/set-message", get(set_message))
+            .layer(MessagesManagerLayer)
             .layer(session_layer);
 
         async fn root(messages: Messages) -> impl IntoResponse {
             messages
                 .into_iter()
-                .map(|(level, message)| format!("{:?}: {}", level, message))
+                .map(|message| format!("{:?}: {}", message.level, message))
                 .collect::<Vec<_>>()
                 .join(", ")
         }
@@ -265,10 +354,7 @@ mod tests {
         async fn set_message(messages: Messages) -> impl IntoResponse {
             messages
                 .debug("Hello, world!")
-                .info("This is an info message.")
-                .save()
-                .await
-                .unwrap();
+                .info("This is an info message.");
             Redirect::to("/")
         }
 
