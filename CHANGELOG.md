@@ -1,5 +1,9 @@
 # Unreleased
 
+# 0.2.1
+
+- Save only when messages have been modified
+
 # 0.2.0
 
 **Breaking Changes**

@@ -71,7 +71,10 @@ use std::{
     collections::VecDeque,
     future::Future,
     pin::Pin,
-    sync::Arc,
+    sync::{
+        atomic::{self, AtomicBool},
+        Arc,
+    },
     task::{Context, Poll},
 };
 
@@ -145,6 +148,7 @@ struct Data {
 pub struct Messages {
     session: Session,
     data: Arc<Mutex<Data>>,
+    is_modified: Arc<AtomicBool>,
 }
 
 impl Messages {
@@ -154,6 +158,7 @@ impl Messages {
         Self {
             session,
             data: Arc::new(Mutex::new(data)),
+            is_modified: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -191,6 +196,11 @@ impl Messages {
                 level,
             });
         }
+
+        if !self.is_modified() {
+            self.is_modified.store(true, atomic::Ordering::Release);
+        }
+
         self
     }
 
@@ -209,6 +219,10 @@ impl Messages {
         }
         self
     }
+
+    fn is_modified(&self) -> bool {
+        self.is_modified.load(atomic::Ordering::Acquire)
+    }
 }
 
 impl Iterator for Messages {
@@ -216,7 +230,11 @@ impl Iterator for Messages {
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut data = self.data.lock();
-        data.messages.pop_front()
+        let message = data.messages.pop_front();
+        if message.is_some() && !self.is_modified() {
+            self.is_modified.store(true, atomic::Ordering::Release);
+        }
+        message
     }
 }
 
@@ -274,7 +292,7 @@ where
 
             let res = inner.call(req).await;
 
-            if messages.save().await.is_err() {
+            if messages.is_modified() && messages.save().await.is_err() {
                 let mut res = Response::default();
                 *res.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
                 return Ok(res);
