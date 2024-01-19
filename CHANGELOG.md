@@ -1,5 +1,9 @@
 # Unreleased
 
+# 0.2.2
+
+- Implement `Display` for `Level`
+
 # 0.2.1
 
 - Save only when messages have been modified
