@@ -6,15 +6,34 @@ use axum::{
     Router,
 };
 use axum_messages::{Messages, MessagesManagerLayer};
-use time::Duration;
-use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
+use tower_sessions::{MemoryStore, SessionManagerLayer};
+
+async fn set_messages_handler(messages: Messages) -> impl IntoResponse {
+    messages
+        .info("Hello, world!")
+        .debug("This is a debug message.");
+
+    Redirect::to("/read-messages")
+}
+
+async fn read_messages_handler(messages: Messages) -> impl IntoResponse {
+    let messages = messages
+        .into_iter()
+        .map(|message| format!("{}: {}", message.level, message))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    if messages.is_empty() {
+        "No messages yet!".to_string()
+    } else {
+        messages
+    }
+}
 
 #[tokio::main]
 async fn main() {
     let session_store = MemoryStore::default();
-    let session_layer = SessionManagerLayer::new(session_store)
-        .with_secure(false)
-        .with_expiry(Expiry::OnInactivity(Duration::days(1)));
+    let session_layer = SessionManagerLayer::new(session_store).with_secure(false);
 
     let app = Router::new()
         .route("/", get(set_messages_handler))
@@ -27,26 +46,4 @@ async fn main() {
     axum::serve(listener, app.into_make_service())
         .await
         .unwrap();
-}
-
-async fn read_messages_handler(messages: Messages) -> impl IntoResponse {
-    let messages = messages
-        .into_iter()
-        .map(|message| format!("{:?}: {}", message.level, message))
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    if messages.is_empty() {
-        "No messages yet!".to_string()
-    } else {
-        messages
-    }
-}
-
-async fn set_messages_handler(messages: Messages) -> impl IntoResponse {
-    messages
-        .info("Hello, world!")
-        .debug("This is a debug message.");
-
-    Redirect::to("/read-messages")
 }

@@ -12,15 +12,34 @@
 //!     Router,
 //! };
 //! use axum_messages::{Messages, MessagesManagerLayer};
-//! use time::Duration;
-//! use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
+//! use tower_sessions::{MemoryStore, SessionManagerLayer};
+//!
+//! async fn set_messages_handler(messages: Messages) -> impl IntoResponse {
+//!     messages
+//!         .info("Hello, world!")
+//!         .debug("This is a debug message.");
+//!
+//!     Redirect::to("/read-messages")
+//! }
+//!
+//! async fn read_messages_handler(messages: Messages) -> impl IntoResponse {
+//!     let messages = messages
+//!         .into_iter()
+//!         .map(|message| format!("{}: {}", message.level, message))
+//!         .collect::<Vec<_>>()
+//!         .join(", ");
+//!
+//!     if messages.is_empty() {
+//!         "No messages yet!".to_string()
+//!     } else {
+//!         messages
+//!     }
+//! }
 //!
 //! #[tokio::main]
 //! async fn main() {
 //!     let session_store = MemoryStore::default();
-//!     let session_layer = SessionManagerLayer::new(session_store)
-//!         .with_secure(false)
-//!         .with_expiry(Expiry::OnInactivity(Duration::days(1)));
+//!     let session_layer = SessionManagerLayer::new(session_store).with_secure(false);
 //!
 //!     let app = Router::new()
 //!         .route("/", get(set_messages_handler))
@@ -33,28 +52,6 @@
 //!     axum::serve(listener, app.into_make_service())
 //!         .await
 //!         .unwrap();
-//! }
-//!
-//! async fn read_messages_handler(messages: Messages) -> impl IntoResponse {
-//!     let messages = messages
-//!         .into_iter()
-//!         .map(|message| format!("{:?}: {}", message.level, message))
-//!         .collect::<Vec<_>>()
-//!         .join(", ");
-//!
-//!     if messages.is_empty() {
-//!         "No messages yet!".to_string()
-//!     } else {
-//!         messages
-//!     }
-//! }
-//!
-//! async fn set_messages_handler(messages: Messages) -> impl IntoResponse {
-//!     messages
-//!         .info("Hello, world!")
-//!         .debug("This is a debug message.");
-//!
-//!     Redirect::to("/read-messages")
 //! }
 //! ```
 #![warn(
@@ -134,6 +131,18 @@ pub enum Level {
 
     /// An action was not successful or some other failure occurred.
     Error = 4,
+}
+
+impl fmt::Display for Level {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Debug => "Debug",
+            Self::Info => "Info",
+            Self::Success => "Success",
+            Self::Warning => "Warning",
+            Self::Error => "Error",
+        })
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -238,6 +247,26 @@ impl Iterator for Messages {
     }
 }
 
+#[async_trait]
+impl<S> FromRequestParts<S> for Messages
+where
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, &'static str);
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        parts
+            .extensions
+            .get::<Messages>()
+            .cloned()
+            .ok_or((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Could not extract messages. Is `MessagesManagerLayer` installed?",
+            ))
+            .map(Messages::load)
+    }
+}
+
 /// MIddleware provider `Messages` as a request extension.
 #[derive(Debug, Clone)]
 pub struct MessagesManager<S> {
@@ -315,44 +344,21 @@ impl<S> Layer<S> for MessagesManagerLayer {
     }
 }
 
-#[async_trait]
-impl<S> FromRequestParts<S> for Messages
-where
-    S: Send + Sync,
-{
-    type Rejection = (StatusCode, &'static str);
-
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        parts
-            .extensions
-            .get::<Messages>()
-            .cloned()
-            .ok_or((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Could not extract messages. Is `MessagesManagerLayer` installed?",
-            ))
-            .map(|messages| messages.load())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use axum::{response::Redirect, routing::get, Router};
     use axum_core::{body::Body, extract::Request, response::IntoResponse};
     use http::header;
     use http_body_util::BodyExt;
-    use time::Duration;
     use tower::ServiceExt;
-    use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
+    use tower_sessions::{MemoryStore, SessionManagerLayer};
 
     use super::*;
 
     #[tokio::test]
     async fn basic() {
         let session_store = MemoryStore::default();
-        let session_layer = SessionManagerLayer::new(session_store)
-            .with_secure(false)
-            .with_expiry(Expiry::OnInactivity(Duration::days(1)));
+        let session_layer = SessionManagerLayer::new(session_store).with_secure(false);
 
         let app = Router::new()
             .route("/", get(root))
@@ -363,7 +369,7 @@ mod tests {
         async fn root(messages: Messages) -> impl IntoResponse {
             messages
                 .into_iter()
-                .map(|message| format!("{:?}: {}", message.level, message))
+                .map(|message| format!("{}: {}", message.level, message))
                 .collect::<Vec<_>>()
                 .join(", ")
         }
