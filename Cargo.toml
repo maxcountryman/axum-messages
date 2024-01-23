@@ -18,7 +18,7 @@ http = "1.0.0"
 parking_lot = "0.12.1"
 serde = { version = "1.0.195", features = ["derive"] }
 tower = "0.4"
-tower-sessions-core = "0.9.1"
+tower-sessions-core = "0.10.0"
 
 [dev-dependencies]
 axum = { version = "0.7.0", features = ["macros"] }
@@ -26,7 +26,7 @@ http-body-util = "0.1"
 hyper = "1.0"
 tokio = { version = "1.20", features = ["macros", "rt-multi-thread"] }
 tower = "0.4"
-tower-sessions = "0.9.1"
+tower-sessions = "0.10.0"
 
 [[example]]
 name = "basic"
