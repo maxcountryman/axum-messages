@@ -100,6 +100,7 @@ pub struct Message {
     pub message: String,
 
     /// additional params
+    #[serde(rename = "p")]
     pub params: HashMap<String, String>,
 }
 
@@ -214,6 +215,7 @@ impl Messages {
             data.pending_messages.push_back(Message {
                 message: message.into(),
                 level,
+                // default initial value for params
                 params: HashMap::new(),
             });
         }
