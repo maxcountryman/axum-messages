@@ -65,7 +65,7 @@
 
 use core::fmt;
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     future::Future,
     pin::Pin,
     sync::{
@@ -98,11 +98,22 @@ pub struct Message {
     /// The message itself.
     #[serde(rename = "m")]
     pub message: String,
+
+    /// additional params
+    pub params: HashMap<String, String>,
 }
 
 impl fmt::Display for Message {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.message)
+    }
+}
+
+impl Message {
+    /// adding single param to the message
+    pub fn add_param(mut self, name: String, value: impl Into<String>) -> Self {
+        self.params.insert(name, value.into());
+        self
     }
 }
 
@@ -203,6 +214,7 @@ impl Messages {
             data.pending_messages.push_back(Message {
                 message: message.into(),
                 level,
+                params: HashMap::new(),
             });
         }
 
