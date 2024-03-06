@@ -101,7 +101,7 @@ pub struct Message {
 
     /// adding extra args
     #[serde(rename = "a")]
-    pub args: HashMap<String, String>,
+    pub extra_args: HashMap<String, String>,
 }
 
 impl fmt::Display for Message {
@@ -111,9 +111,9 @@ impl fmt::Display for Message {
 }
 
 impl Message {
-    /// adding single arg to the message
+    /// adding extra arg to the message
     pub fn add_arg(mut self, name: String, value: impl Into<String>) -> Self {
-        self.args.insert(name, value.into());
+        self.extra_args.insert(name, value.into());
         self
     }
 }
@@ -215,8 +215,8 @@ impl Messages {
             data.pending_messages.push_back(Message {
                 message: message.into(),
                 level,
-                // default initial value for args
-                args: HashMap::new(),
+                // default initial value for extra args
+                extra_args: HashMap::new(),
             });
         }
 
