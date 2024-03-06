@@ -99,9 +99,9 @@ pub struct Message {
     #[serde(rename = "m")]
     pub message: String,
 
-    /// additional params
-    #[serde(rename = "p")]
-    pub params: HashMap<String, String>,
+    /// adding extra args
+    #[serde(rename = "a")]
+    pub args: HashMap<String, String>,
 }
 
 impl fmt::Display for Message {
@@ -111,9 +111,9 @@ impl fmt::Display for Message {
 }
 
 impl Message {
-    /// adding single param to the message
-    pub fn add_param(mut self, name: String, value: impl Into<String>) -> Self {
-        self.params.insert(name, value.into());
+    /// adding single arg to the message
+    pub fn add_arg(mut self, name: String, value: impl Into<String>) -> Self {
+        self.args.insert(name, value.into());
         self
     }
 }
@@ -215,8 +215,8 @@ impl Messages {
             data.pending_messages.push_back(Message {
                 message: message.into(),
                 level,
-                // default initial value for params
-                params: HashMap::new(),
+                // default initial value for args
+                args: HashMap::new(),
             });
         }
 
