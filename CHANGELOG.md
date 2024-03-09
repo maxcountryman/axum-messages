@@ -1,5 +1,13 @@
 # Unreleased
 
+# 0.5.0
+
+**Breaking Changes**
+
+- Allow providing optional metadata for messages #8, #9
+
+This change updates the `push` method to include an optional metadata argument; other methods are unchanged. A new set of `*_with_medata` postfixed methods is also provided.
+
 # 0.4.0
 
 - Update `tower-sessions` to 0.11.0
