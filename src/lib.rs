@@ -407,7 +407,7 @@ mod tests {
         async fn root(messages: Messages) -> impl IntoResponse {
             messages
                 .into_iter()
-                .map(|message| format!("{}: {}", message.level, message))
+                .map(|message| format!("{}: {} {:?}", message.level, message, message.metadata))
                 .collect::<Vec<_>>()
                 .join(", ")
         }
@@ -440,6 +440,10 @@ mod tests {
 
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
         let body = String::from_utf8(bytes.to_vec()).unwrap();
-        assert_eq!(body, "Debug: Hello, world!, Info: This is an info message.");
+        assert_eq!(
+            body,
+            "Debug: Hello, world! Some({\"foo\": String(\"bar\")}), Info: This is an info \
+             message. None"
+        );
     }
 }
