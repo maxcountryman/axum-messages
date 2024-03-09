@@ -88,6 +88,9 @@ use tower_sessions_core::{session, Session};
 
 // N.B.: Code structure directly borrowed from `axum-flash`: https://github.com/davidpdrsn/axum-flash/blob/5e8b2bded97fd10bb275d5bc66f4d020dec465b9/src/lib.rs
 
+/// Mapping of key-value pairs which provide additional context to the message.
+pub type Metadata = HashMap<String, serde_json::Value>;
+
 /// Container for a message which provides a level and message content.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
@@ -99,22 +102,14 @@ pub struct Message {
     #[serde(rename = "m")]
     pub message: String,
 
-    /// adding extra args
-    #[serde(rename = "a")]
-    pub extra_args: HashMap<String, String>,
+    /// Additional context related to the message.
+    #[serde(rename = "d")]
+    pub metadata: Option<Metadata>,
 }
 
 impl fmt::Display for Message {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.message)
-    }
-}
-
-impl Message {
-    /// adding extra arg to the message
-    pub fn add_arg(mut self, name: String, value: impl Into<String>) -> Self {
-        self.extra_args.insert(name, value.into());
-        self
     }
 }
 
@@ -185,38 +180,67 @@ impl Messages {
 
     /// Push a `Debug` message.
     pub fn debug(self, message: impl Into<String>) -> Self {
-        self.push(Level::Debug, message)
+        self.push(Level::Debug, message, None)
     }
 
     /// Push an `Info` message.
     pub fn info(self, message: impl Into<String>) -> Self {
-        self.push(Level::Info, message)
+        self.push(Level::Info, message, None)
     }
 
     /// Push a `Success` message.
     pub fn success(self, message: impl Into<String>) -> Self {
-        self.push(Level::Success, message)
+        self.push(Level::Success, message, None)
     }
 
     /// Push a `Warning` message.
     pub fn warning(self, message: impl Into<String>) -> Self {
-        self.push(Level::Warning, message)
+        self.push(Level::Warning, message, None)
     }
 
     /// Push an `Error` message.
     pub fn error(self, message: impl Into<String>) -> Self {
-        self.push(Level::Error, message)
+        self.push(Level::Error, message, None)
+    }
+
+    /// Push a `Debug` message with metadata.
+    pub fn debug_with_metadata(self, message: impl Into<String>, metadata: Metadata) -> Self {
+        self.push(Level::Debug, message, Some(metadata))
+    }
+
+    /// Push an `Info` message with metadata.
+    pub fn info_with_metadata(self, message: impl Into<String>, metadata: Metadata) -> Self {
+        self.push(Level::Info, message, Some(metadata))
+    }
+
+    /// Push a `Success` message with metadata.
+    pub fn success_with_metadata(self, message: impl Into<String>, metadata: Metadata) -> Self {
+        self.push(Level::Success, message, Some(metadata))
+    }
+
+    /// Push a `Warning` message with metadata.
+    pub fn warning_with_metadata(self, message: impl Into<String>, metadata: Metadata) -> Self {
+        self.push(Level::Warning, message, Some(metadata))
+    }
+
+    /// Push an `Error` message with metadata.
+    pub fn error_with_metadata(self, message: impl Into<String>, metadata: Metadata) -> Self {
+        self.push(Level::Error, message, Some(metadata))
     }
 
     /// Push a message with the given level.
-    pub fn push(self, level: Level, message: impl Into<String>) -> Self {
+    pub fn push(
+        self,
+        level: Level,
+        message: impl Into<String>,
+        metadata: Option<Metadata>,
+    ) -> Self {
         {
             let mut data = self.data.lock();
             data.pending_messages.push_back(Message {
                 message: message.into(),
                 level,
-                // default initial value for extra args
-                extra_args: HashMap::new(),
+                metadata,
             });
         }
 
@@ -361,7 +385,7 @@ impl<S> Layer<S> for MessagesManagerLayer {
 #[cfg(test)]
 mod tests {
     use axum::{response::Redirect, routing::get, Router};
-    use axum_core::{body::Body, extract::Request, response::IntoResponse};
+    use axum_core::{body::Body, response::IntoResponse};
     use http::header;
     use http_body_util::BodyExt;
     use tower::ServiceExt;
@@ -383,15 +407,18 @@ mod tests {
         async fn root(messages: Messages) -> impl IntoResponse {
             messages
                 .into_iter()
-                .map(|message| format!("{}: {}", message.level, message))
+                .map(|message| format!("{}: {} {:?}", message.level, message, message.metadata))
                 .collect::<Vec<_>>()
                 .join(", ")
         }
 
         #[axum::debug_handler]
         async fn set_message(messages: Messages) -> impl IntoResponse {
+            let mut metadata = Metadata::default();
+            metadata.insert("foo".to_string(), "bar".into());
+
             messages
-                .debug("Hello, world!")
+                .debug_with_metadata("Hello, world!", metadata)
                 .info("This is an info message.");
             Redirect::to("/")
         }
@@ -413,6 +440,10 @@ mod tests {
 
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
         let body = String::from_utf8(bytes.to_vec()).unwrap();
-        assert_eq!(body, "Debug: Hello, world!, Info: This is an info message.");
+        assert_eq!(
+            body,
+            "Debug: Hello, world! Some({\"foo\": String(\"bar\")}), Info: This is an info \
+             message. None"
+        );
     }
 }
