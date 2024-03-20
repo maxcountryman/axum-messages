@@ -1,5 +1,9 @@
 # Unreleased
 
+# 0.6.0
+
+- Update `tower-sessions` to 0.12.0
+
 # 0.5.0
 
 **Breaking Changes**

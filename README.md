@@ -34,7 +34,7 @@ To use the crate in your project, add the following to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-axum-messages = "0.5.0"
+axum-messages = "0.6.0"
 ```
 
 ## 🤸 Usage
