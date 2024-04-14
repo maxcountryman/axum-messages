@@ -251,6 +251,16 @@ impl Messages {
         self
     }
 
+    /// Returns the number of messages to be read.
+    pub fn len(&self) -> usize {
+        self.data.lock().messages.len()
+    }
+
+    /// Returns `true` if there are no messages.
+    pub fn is_empty(&self) -> bool {
+        self.data.lock().messages.is_empty()
+    }
+
     async fn save(self) -> Result<Self, session::Error> {
         self.session
             .insert(Self::DATA_KEY, self.data.clone())
@@ -338,15 +348,19 @@ where
 
         Box::pin(async move {
             let Some(session) = req.extensions().get::<Session>().cloned() else {
+                tracing::error!(
+                    "session not found in request extensions; do tower-sessions versions match?"
+                );
                 let mut res = Response::default();
                 *res.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
                 return Ok(res);
             };
 
-            let data = match session.get::<Data>(Messages::DATA_KEY).await {
+            let data = match session.get(Messages::DATA_KEY).await {
                 Ok(Some(data)) => data,
                 Ok(None) => Data::default(),
-                Err(_) => {
+                Err(err) => {
+                    tracing::error!(err = %err, "could not load messages data");
                     let mut res = Response::default();
                     *res.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
                     return Ok(res);
@@ -354,15 +368,17 @@ where
             };
 
             let messages = Messages::new(session, data);
-
             req.extensions_mut().insert(messages.clone());
 
             let res = inner.call(req).await;
 
-            if messages.is_modified() && messages.save().await.is_err() {
-                let mut res = Response::default();
-                *res.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
-                return Ok(res);
+            if messages.is_modified() {
+                if let Err(err) = messages.save().await {
+                    tracing::error!(err = %err, "could not save messages data");
+                    let mut res = Response::default();
+                    *res.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
+                    return Ok(res);
+                }
             };
 
             res
