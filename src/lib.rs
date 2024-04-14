@@ -54,6 +54,61 @@
 //!         .unwrap();
 //! }
 //! ```
+//!
+//! # Design
+//!
+//! This library, while compact and straightforward, benefits from an
+//! understanding of its design and its integration with core web application
+//! fundamentals like HTTP.
+//!
+//! ## How Messages are Managed
+//!
+//! Messages in this library are written during one HTTP request and are
+//! accessible only in subsequent requests. This lifecycle management is handled
+//! transparently by the library, ensuring simplicity for the consuming
+//! application.
+//!
+//! At first glance, this approach might seem to limit functionality: if
+//! messages are delayed until the next request, how does this not result in
+//! lost presentation state during user interactions? This is where the state
+//! management capabilities of HTTP sessions come into play.
+//!
+//! ## Use of Sessions for State Management
+//!
+//! HTTP is a stateless protocol, but managing state over HTTP is a long-solved
+//! problem with various effective solutions, sessions being one of the most
+//! prominent. This library leverages sessions to maintain state, allowing
+//! messages to persist between requests without affecting the continuity of the
+//! user experience.
+//!
+//! Sessions can handle complex state scenarios, and when used in conjunction
+//! with HTTP, they provide a robust foundation for modern, feature-rich
+//! web applications. This library slots naturally into this well-established
+//! paradigm by serializing state to and from the session.
+//!
+//! ## Practical Example: Managing User Registration State
+//!
+//! To better illustrate the concept, consider an application that uses
+//! `axum-messages` with an HTML user registration form containing inputs for
+//! the user's name, desired username, and password.
+//!
+//! - **GET Request**: When users navigate to `/registration`, the server
+//!   renders the form.
+//! - **POST Request**: Users submit the form, which is then sent to
+//!   `/registration` where the server processes the data.
+//!
+//! During form processing, if the desired username is unavailable, the server
+//! sets a flash message indicating the issue and redirects back to the
+//! `/registration` URL. However, instead of presenting a blank form upon
+//! redirection, the server can utilize the session to repopulate the form
+//! fields with previously submitted data (except for sensitive fields like
+//! passwords). This not only enhances user experience by reducing the need to
+//! re-enter information but also demonstrates efficient state management using
+//! sessions.
+//!
+//! By integrating messages and form data into sessions, the library facilitates
+//! a smoother and more intuitive interaction flow, illustrating the powerful
+//! synergy between state management via sessions and HTTP's stateless nature.
 #![warn(
     clippy::all,
     nonstandard_style,
