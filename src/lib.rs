@@ -106,8 +106,8 @@
 //! re-enter information but also demonstrates efficient state management using
 //! sessions.
 //!
-//! By integrating messages and form data into sessions, the library facilitates
-//! a smoother and more intuitive interaction flow, illustrating the powerful
+//! By integrating messages and form data into sessions, we facilitate a
+//! smoother and more intuitive interaction flow, illustrating the powerful
 //! synergy between state management via sessions and HTTP's stateless nature.
 #![warn(
     clippy::all,
