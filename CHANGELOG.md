@@ -1,5 +1,11 @@
 # Unreleased
 
+# 0.6.1
+
+- Update docs re web fundamentals
+- Provide tracing for error cases
+- Additional utility methods
+
 # 0.6.0
 
 - Update `tower-sessions` to 0.12.0
