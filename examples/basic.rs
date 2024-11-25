@@ -8,6 +8,7 @@ use axum::{
 use axum_messages::{Messages, MessagesManagerLayer};
 use tower_sessions::{MemoryStore, SessionManagerLayer};
 
+#[axum::debug_handler]
 async fn set_messages_handler(messages: Messages) -> impl IntoResponse {
     messages
         .info("Hello, world!")
@@ -16,6 +17,7 @@ async fn set_messages_handler(messages: Messages) -> impl IntoResponse {
     Redirect::to("/read-messages")
 }
 
+#[axum::debug_handler]
 async fn read_messages_handler(messages: Messages) -> impl IntoResponse {
     let messages = messages
         .into_iter()
@@ -43,6 +45,7 @@ async fn main() {
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    println!("serving at http://{}", addr);
     axum::serve(listener, app.into_make_service())
         .await
         .unwrap();
