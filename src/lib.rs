@@ -172,7 +172,7 @@ type MessageQueue = VecDeque<Message>;
 
 /// Enumeration of message levels.
 ///
-/// This folllows directly from the [Django
+/// This follows directly from the [Django
 /// implementation][django-message-levels].
 ///
 /// [django-message-levels]: https://docs.djangoproject.com/en/5.0/ref/contrib/messages/#message-levels
@@ -374,7 +374,7 @@ where
     }
 }
 
-/// MIddleware provider `Messages` as a request extension.
+/// Middleware provider `Messages` as a request extension.
 #[derive(Debug, Clone)]
 pub struct MessagesManager<S> {
     inner: S,
