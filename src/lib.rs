@@ -130,7 +130,6 @@ use std::{
     task::{Context, Poll},
 };
 
-use std::future::ready;
 use axum_core::{
     extract::{FromRequestParts, Request},
     response::Response,
@@ -138,6 +137,7 @@ use axum_core::{
 use http::{request::Parts, StatusCode};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::future::ready;
 use tower::{Layer, Service};
 use tower_sessions_core::{session, Session};
 
@@ -356,7 +356,10 @@ where
 {
     type Rejection = (StatusCode, &'static str);
 
-    fn from_request_parts(parts: &mut Parts, _state: &S) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
         ready(
             parts
                 .extensions
