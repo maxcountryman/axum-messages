@@ -121,7 +121,7 @@
 use core::fmt;
 use std::{
     collections::{HashMap, VecDeque},
-    future::Future,
+    future::{ready, Future},
     pin::Pin,
     sync::{
         atomic::{self, AtomicBool},
@@ -137,7 +137,6 @@ use axum_core::{
 use http::{request::Parts, StatusCode};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use std::future::ready;
 use tower::{Layer, Service};
 use tower_sessions_core::{session, Session};
 
