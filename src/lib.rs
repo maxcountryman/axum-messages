@@ -411,7 +411,7 @@ where
                     "session not found in request extensions; do tower-sessions versions match?"
                 );
                 let mut res = Response::default();
-                *res.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
+                *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                 return Ok(res);
             };
 
@@ -421,7 +421,7 @@ where
                 Err(err) => {
                     tracing::error!(err = %err, "could not load messages data");
                     let mut res = Response::default();
-                    *res.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
+                    *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                     return Ok(res);
                 }
             };
@@ -435,7 +435,7 @@ where
                 if let Err(err) = messages.save().await {
                     tracing::error!(err = %err, "could not save messages data");
                     let mut res = Response::default();
-                    *res.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
+                    *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                     return Ok(res);
                 }
             };
