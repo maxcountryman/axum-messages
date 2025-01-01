@@ -130,7 +130,6 @@ use std::{
     task::{Context, Poll},
 };
 
-use async_trait::async_trait;
 use axum_core::{
     extract::{FromRequestParts, Request},
     response::Response,
@@ -350,7 +349,6 @@ impl Iterator for Messages {
     }
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for Messages
 where
     S: Send + Sync,
